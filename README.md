@@ -17,6 +17,12 @@ http://codefor.de/stuttgart/  build: http://luftdaten.info/feinstaubsensor-bauen
 running:  110 - 130mA
 waiting:   70mA  (no sleep mode implemented)
 
+### authentication
+* both authentication methods are available
+  you have to configure the device via the console in the desired method
+* - Over-the-Air Activation (OTAA)
+* - Activation by Personalization (ABP)
+
 ### remarks
 * please read carefully the changes made in lmic/config.h
 * and the compiling selections made for the board
