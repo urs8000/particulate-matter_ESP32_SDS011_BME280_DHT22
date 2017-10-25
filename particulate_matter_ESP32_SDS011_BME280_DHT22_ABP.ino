@@ -102,8 +102,8 @@
  // Sensor-ID:  4 bytes
  // PM10:       2 bytes    multiplied by 10
  // PM2.5:      2 bytes    multiplied by 10
- // Temp DHT:   2 bytes    multiplied by 100       !! will be overwritten by values from BME280 if available
- // Humid DHT:  2 bytes    multiplied by 100       !! message lengst and structure could be extended if desired
+ // Temp DHT:   2 bytes    multiplied by 100
+ // Humid DHT:  2 bytes    multiplied by 100
  // Temp BME:   2 bytes    multiplied by 100
  // Humid BME:  2 bytes    multiplied by 100
  // Press BME:  2 bytes    no nachkommastellen
@@ -131,9 +131,9 @@
 #include <hal/hal.h>
 #include <SPI.h>
 
-#include <Keys_prod_feinstaub_feinstaub_0001_RFM95.h>
+#include <Keys_prod_feinstaub_feinstaub_0001_RFM95.h>      // Device-Address: 260113BB
 
-// #define my_DEBUG                         // uncomment for debug messages on Serial Monitor  (sporadically disconnect from USB)
+#define my_DEBUG                         // uncomment for debug messages on Serial Monitor  (sporadically disconnect from USB)
 
 
 /* ****** Keys read from separate file  keyfile.h  ,  structure explained above ******
@@ -161,7 +161,7 @@ static osjob_t sendjob;
 
 // Schedule TX every this many seconds (might become longer due to duty
 // cycle limitations).
-const unsigned TX_INTERVAL = 600;           // 600 is the minimal delay used between measurements
+const unsigned TX_INTERVAL = 60;           // 600 is the minimal delay used between measurements
 
 // SCK, MISO, MOSI connected to their corresponding pins (9, 10, 11)  (see espressif doculentation)
 /* for ESP32
@@ -258,6 +258,8 @@ HardwareSerial Serial1(2);
 #define serialSDS Serial1
 #endif
 
+int LED = 2;                            // GPIO02     blue
+
 String result_SDS = "";
 String result_DHT = "";
 String result_BME = "";
@@ -296,17 +298,34 @@ String Float2String(const float value) {
   return s;
 }
 
-
+void blink_error(int blinks) {
+    if ( blinks != 0 ) {
+      for ( int z = 0; z == blinks-1; z++ ) {
+       digitalWrite(LED, HIGH);
+       delay(100);                            // wait some time
+       digitalWrite(LED, LOW);    
+       delay(100);                            // wait some time 
+      }
+    } else {
+      for ( int z = 0; z != 10000; z++ ) {
+         digitalWrite(LED, HIGH);
+         delay(100);                            // wait some time
+         digitalWrite(LED, LOW);    
+         delay(100);                            // wait some time 
+      }
+    }
+}
 
 //-------------------------------------------------------------------------------------------------
 #if BME280
 void sensorBME()  {
   // Reading Tempersture, Humidity and Pressure
-  bme_temp    = bme.readTemperature();               // Degree Celsius
-  bme_hum     = bme.readHumidity();                  // % rel.Hum
-  bme_press   = bme.readPressure() / 100.0F;         // hPa
+    bme_temp    = bme.readTemperature();                    // Degree Celsius
+    bme_hum     = bme.readHumidity();                       // % rel.Hum
+    bme_press   = bme.readPressure() / 100.0F;              // hPa
 
-  if ( isnan(bme_temp) || isnan(bme_hum) || isnan(bme_press) )  {
+  if ( !bme.begin() )  {
+    blink_error(1);
     cnt_BMEfail++;
     BME_try++;
     BME_failed = true;
@@ -315,15 +334,23 @@ void sensorBME()  {
     DEBUG_PLN();
     delay(500);
   } else {
+    if ( isnan(bme_temp) || isnan(bme_hum) || isnan(bme_press) ) {
+       bme_temp   = 0.0;  bme_hum    = 0.0;  bme_press  = 0.0;
+    }
     result_BME   = String(bme_temp) + ";" + String(bme_hum) + ";" + String(bme_press) + ";";
     cnt_BMEok++;
     BME_failed = false;
     DEBUG_PRT("BME Temp:  ");   DEBUG_PLN(bme_temp);
     DEBUG_PRT("BME Hum:   ");   DEBUG_PLN(bme_hum);
     DEBUG_PRT("BME Press: ");   DEBUG_PLN(bme_press);
-	  DEBUG_PRT("ERROR cnt ok:"); DEBUG_PRT(cnt_BMEok);  DEBUG_PRT("  NOK: "); DEBUG_PLN(cnt_BMEfail);
+	  DEBUG_PRT("BME ERROR cnt ok:"); DEBUG_PRT(cnt_BMEok);  DEBUG_PRT("  NOK: "); DEBUG_PRT(cnt_BMEfail);
   }  
   DEBUG_PLN();
+    if ( (BME_try == 5) || ( cnt_BMEfail == 50) ) {
+      bool status;
+      status = bme.begin();
+      DEBUG_PLN("BME reinit");
+    }  
 }
 #endif
 
@@ -337,12 +364,12 @@ void sensorDHT()  {
 
   // check if returns are valid, if they are NaN (not a number) then something went wrong!
   if ( isnan(DHT_temp) || isnan(DHT_hum) ) {
+    blink_error(1);
     cnt_DHTfail++;
     DHT_try++;
     DHT_failed = true;
     DEBUG_PRT("Failed to read from DHT, fail counter: ");
     DEBUG_PRT(cnt_DHTfail);
-    DEBUG_PLN();
     delay(500);
   } else {
     result_DHT   = String(DHT_temp) + ";" + String(DHT_hum) + ";";
@@ -350,14 +377,17 @@ void sensorDHT()  {
     DHT_failed = false;
     DEBUG_PRT("DHT: Temp: "); 
     DEBUG_PRT(DHT_temp);
-    DEBUG_PRT("*C");
-    DEBUG_PRT(" Humidity: "); 
+    DEBUG_PLN("*C");
+    DEBUG_PRT("Humidity:  "); 
     DEBUG_PRT(DHT_hum);
     DEBUG_PLN("%");
-    
-    DEBUG_PRT("ERROR cnt ok:"); DEBUG_PRT(cnt_DHTok);  DEBUG_PRT("  NOK: "); DEBUG_PLN(cnt_DHTfail);
+    DEBUG_PRT("DHT ERROR cnt ok:"); DEBUG_PRT(cnt_DHTok);  DEBUG_PRT("  NOK: "); DEBUG_PRT(cnt_DHTfail);
   }
     DEBUG_PLN();
+    if ( (DHT_try == 5) || ( cnt_DHTfail == 50) ) {
+      dht.begin();
+      DEBUG_PLN("DHT reinit");
+    }
 }
 #endif
 
@@ -450,46 +480,9 @@ void ReadSensors() {
     tosend_s = "";
     DEBUG_PLN("\n----------------------------------------------------------");
     
-    // BME280
-	#if BME280
-     BME_try = 0;
-     while ( (BME_try <= 5) || (BME_failed == true) )
-     {
-       sensorBME();
-       if ( BME_failed == false ) {
-          tosend_s   += result_BME;
-          bme_temp_i  = int(bme_temp * 100);
-          bme_hum_i   = int(bme_hum  * 100);
-		      bme_press_i = int(bme_press);
-          DEBUG_PLN( "BME:  Temp: " + String(bme_temp_i) + "  Humidity: " + String(bme_hum_i) + "  Pressure: " + String(bme_press_i) );
-          break; 
-       } else {
-         result_BME ="0.0;0.0;0;";
-       }
-     }
-    #endif
-	
-    // DHT
-    // it seems, that DHT sometimes failes, so give it 5 tryes to read good data
-    #if DHT22
-     DHT_try = 0;
-     while ( (DHT_try <= 5) || (DHT_failed == true) )
-     {
-       sensorDHT();
-       if ( DHT_failed == false ) {
-          tosend_s += result_DHT;
-          DHT_t_i = int(DHT_temp * 100);
-          DHT_h_i = int(DHT_hum  * 100);
-          break; 
-       } else {
-         result_DHT ="0.0;0.0;";
-       }
-     }
-    #endif
-	
     // SDS
     // Now start SDS senor
-	#if SDS011
+	  #if SDS011
      serialSDS.write(start_SDS_cmd,sizeof(start_SDS_cmd)); 
      is_SDS_running = true;
      SDS_done       = false;
@@ -509,7 +502,50 @@ void ReadSensors() {
      tosend_s += result_SDS;
     #endif
 
-     DEBUG_PLN(" BME            DHT    SDS");
+  // BME280
+    #if BME280
+     BME_try    = 0;
+     BME_failed = false;
+     while ( BME_try <= 5 )
+     {
+       sensorBME();
+       if ( BME_failed == false ) {
+         break;
+       } else {
+         result_BME ="0.0;0.0;0;";
+         bme_temp   = 0.0;  bme_hum    = 0.0;  bme_press  = 0.0;
+       }
+     }
+      tosend_s   += result_BME;
+      bme_temp_i  = int(bme_temp * 100);
+      bme_hum_i   = int(bme_hum  * 100);
+      bme_press_i = int(bme_press);
+      // DEBUG_PLN( "BME:  Temp: " + String(bme_temp_i) + "  Humidity: " + String(bme_hum_i) + "  Pressure: " + String(bme_press_i) );
+    #endif
+  
+    // DHT
+    // it seems, that DHT sometimes failes, so give it 5 tries to read good data
+    #if DHT22
+     DHT_try    = 0;
+     DHT_failed = false;
+     while ( DHT_try <= 5 )                         //|| (DHT_failed == true)
+     {
+       sensorDHT();
+       if ( DHT_failed == false ) {
+          break; 
+       } else {
+         result_DHT ="0.0;0.0;";
+         DHT_temp = 0.0;  DHT_hum = 0.0;
+       }
+     }
+       tosend_s += result_DHT;
+       DHT_t_i = int(DHT_temp * 100);
+       DHT_h_i = int(DHT_hum  * 100);
+
+    #endif
+
+
+     DEBUG_PLN(" SDS             BME            DHT");
      DEBUG_PLN(tosend_s);
 
   // for debugging:                       423F BACB 5BA0 F280 223D       3F000000 BACB 5BA0 F280 223D 0000003FBACB5BA0F280223D
@@ -519,7 +555,7 @@ void ReadSensors() {
      t_i      =  -3456;                   //  -3456 =          (-34.56)
      h_i      =   8765;                   //   8765 =          ( 87.65)
    */
-   #if SDS011
+   #if SDS011                                    // bytes 00..07 are for SDS011
      mydata[0]  = byte(SDS_ID);
      mydata[1]  = byte(SDS_ID >>  8);
      mydata[2]  = byte(SDS_ID >> 16);
@@ -529,20 +565,36 @@ void ReadSensors() {
      mydata[6]  = highByte(sp2_av_i);
      mydata[7]  =  lowByte(sp2_av_i);
     #endif
-    #if DHT22                               // will be overwritten by values of the BME280 sensor
+    #if ( DHT22 && !BME280 )                     // just to save some cycles
      mydata[8]  = highByte(DHT_t_i);
      mydata[9]  =  lowByte(DHT_t_i);
      mydata[10] = highByte(DHT_h_i);
      mydata[11] =  lowByte(DHT_h_i);
     #endif
-    #if BME280
-     mydata[8]  = highByte(bme_temp_i);
-     mydata[9]  =  lowByte(bme_temp_i);
-     mydata[10] = highByte(bme_hum_i);
-     mydata[11] =  lowByte(bme_hum_i);
-     mydata[12] = highByte(bme_press_i);
-     mydata[13] =  lowByte(bme_press_i);
+    #if BME280                                   // BME280
+      if ( !BME_failed ) {                       // do not fill 
+         mydata[8]  = highByte(bme_temp_i);
+         mydata[9]  =  lowByte(bme_temp_i);
+         mydata[10] = highByte(bme_hum_i);
+         mydata[11] =  lowByte(bme_hum_i);
+         mydata[12] = highByte(bme_press_i);
+         mydata[13] =  lowByte(bme_press_i);
+      }
     #endif	
+    #if ( BME280 && DHT22 )
+      if ( BME_failed ) {
+         mydata[8]  = highByte(DHT_t_i);
+         mydata[9]  =  lowByte(DHT_t_i);
+         mydata[10] = highByte(DHT_h_i);
+         mydata[11] =  lowByte(DHT_h_i);
+      }
+    #endif    
+    #if BME280
+      if ( BME_failed ) {
+         mydata[12] = 0;
+         mydata[13] = 0;
+      }
+    #endif
 	
 /*   mydata[x] = highByte(Vcc_i);
      mydata[x] =  lowByte(Vcc_i);    */
@@ -646,28 +698,40 @@ void do_send(osjob_t* j){
 void setup() {
     Serial.begin(115200);
       delay(100);
+      pinMode(LED, OUTPUT);                              // initialize onboard LED as output
+
     DEBUG_PLN("Starting on USB Serial");
       delay(100);
     serialSDS.begin(9600);                               // 
       delay(100);
       // serialSDS.println("Starting on Serial-1 ...");  // debugging only, use a FTDIadapter at Tx (only Tx & GND connected!)
       // delay(100);
+    #if DHT22
+      dht.begin();
+      delay(500);
+    #endif
 
-    dht.begin();
-    delay(500);
-
-     bool status;
-    // default settings
-    status = bme.begin();
-    if (!status) {
-        Serial.println("Could not find a valid BME280 sensor, check wiring!");
-        while (1);
-    }
-
+    #if BME280
+       bool status;
+       status = bme.begin();
+       if (!status) {
+            DEBUG_PLN("Could not find a valid BME280 sensor, check wiring!");
+            blink_error(0);
+            // watchdog_reset_esp32();
+            while (1);
+       }
+    #endif
+    
     // now read each sensor once
-    sensorDHT();
-    sensorBME();
-    sensorSDS();
+    #if DHT22
+       sensorDHT();
+    #endif
+    #if BME280
+       sensorBME();
+    #endif
+    #if SDS011
+       sensorSDS();
+    #endif   
 
     // LMIC init
     os_init();
@@ -769,23 +833,242 @@ result
 from console:
 payload:D5B3000000B0005E08CA1734  PM10:17.6  PM25:9.4  SDS_ID:46037  humidity:59.4  temperature:22.5
 
+----------------------------------------------------------------------------------------------------------
+testcase 1:   BME & DHT available
+startup --> message AA313233
+2 full cycles
+remove DHT
+1 full cycles  ( SDS & BME data in message)
+insert DHT
+1 full cycles  ( SDS & BME data in message, DHT result in monitor)
+remove BME
+1 full cycle   ( SDS & data from DHT in message, pressure = 0)
+insert BME
+   --> sometimes it needs 1 or 2 cycles until both sensord were available again
 
-20171016
-Humidity: 50.20 %  Temperature: 27.10 *C    ok: 6   fails: 2
-t: 2710 h: 5020
+from Serial.Monitor:
+ets Jun  8 2016 00:22:57
+
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+ets Jun  8 2016 00:22:57
+
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0x00
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0008,len:8
+load:0x3fff0010,len:160
+load:0x40078000,len:10632
+load:0x40080000,len:252
+entry 0x40080034
+Starting on USB Serial
+Failed to read from DHT, fail counter: 1
+BME Temp:  28.56
+BME Hum:   43.30
+BME Press: 973.14
+BME ERROR cnt ok:1  NOK: 0
+os_init done
+lmic reset done
+setSession done
+OP_TXRXPEND, not sending
+289763: EV_TXCOMPLETE (includes waiting for RX windows)
+
+----------------------------------------------------------
 SDS started
-Sum: 1309  Cnt: 6
+Sum: 393  Cnt: 6
 Send-ID: 46037
-PM10:    21.8  218
-PM2.5:   8.0  80
+PM10:    6.6  65
+PM2.5:   1.9  18
 ------------------
 SDS stopped
-27.10;50.20;46037;21.8;8.0;
-D5B3000DA050A96139C
+BME Temp:  28.71
+BME Hum:   42.63
+BME Press: 973.08
+BME ERROR cnt ok:2  NOK: 0
+DHT: Temp: 26.30*C
+Humidity:  49.70%
+DHT ERROR cnt ok:1  NOK: 1
+ SDS             BME            DHT
+46037;6.6;1.9;28.71;42.63;973.08;26.30;49.70;
+D5B300041012B3710A73CD000
 Packet queued
-12128619: EV_TXCOMPLETE (includes waiting for RX windows)
+5293803: EV_TXCOMPLETE (includes waiting for RX windows)
+
+----------------------------------------------------------
+SDS started
+Sum: 449  Cnt: 6
+Send-ID: 46037
+PM10:    7.5  74
+PM2.5:   1.6  16
+------------------
+SDS stopped
+BME Temp:  28.64
+BME Hum:   42.81
+BME Press: 973.15
+BME ERROR cnt ok:3  NOK: 0
+Failed to read from DHT, fail counter: 2
+Failed to read from DHT, fail counter: 3
+Failed to read from DHT, fail counter: 4
+Failed to read from DHT, fail counter: 5
+Failed to read from DHT, fail counter: 6
+DHT reinit
+Failed to read from DHT, fail counter: 7
+ SDS             BME            DHT
+46037;7.5;1.6;28.64;42.81;973.15;0.0;0.0;
+D5B30004A010B3010B83CD000
+Packet queued
+10625760: EV_TXCOMPLETE (includes waiting for RX windows)
+
+----------------------------------------------------------
+SDS started
+Sum: 866  Cnt: 6
+Send-ID: 46037
+PM10:    14.4  144
+PM2.5:   2.0  20
+------------------
+SDS stopped
+BME Temp:  28.55
+BME Hum:   43.30
+BME Press: 973.12
+BME ERROR cnt ok:4  NOK: 0
+DHT: Temp: 26.30*C
+Humidity:  48.70%
+DHT ERROR cnt ok:2  NOK: 7
+ SDS             BME            DHT
+46037;14.4;2.0;28.55;43.30;973.12;26.30;48.70;
+D5B300090014B2710EA3CD000
+Packet queued
+15629841: EV_TXCOMPLETE (includes waiting for RX windows)
+
+----------------------------------------------------------
+SDS started
+Sum: 307  Cnt: 6
+Send-ID: 46037
+PM10:    5.1  51
+PM2.5:   1.7  17
+------------------
+SDS stopped
+BME Temp:  28.51
+BME Hum:   42.78
+BME Press: 973.11
+BME ERROR cnt ok:5  NOK: 0
+Failed to read from DHT, fail counter: 8
+Failed to read from DHT, fail counter: 9
+Failed to read from DHT, fail counter: 10
+Failed to read from DHT, fail counter: 11
+Failed to read from DHT, fail counter: 12
+DHT reinit
+Failed to read from DHT, fail counter: 13
+ SDS             BME            DHT
+46037;5.1;1.7;28.51;42.78;973.11;0.0;0.0;
+D5B300033011B2310B63CD000
+Packet queued
+20961048: EV_TXCOMPLETE (includes waiting for RX windows)
+
+----------------------------------------------------------
+SDS started
+Sum: 450  Cnt: 6
+Send-ID: 46037
+PM10:    7.5  75
+PM2.5:   2.2  22
+------------------
+SDS stopped
+BME Temp:  28.39
+BME Hum:   42.76
+BME Press: 973.09
+BME ERROR cnt ok:6  NOK: 0
+DHT: Temp: 26.30*C
+Humidity:  53.90%
+DHT ERROR cnt ok:3  NOK: 13
+ SDS             BME            DHT
+46037;7.5;2.2;28.39;42.76;973.09;26.30;53.90;
+D5B30004B016B1710B43CD000
+Packet queued
+25965132: EV_TXCOMPLETE (includes waiting for RX windows)
+
+----------------------------------------------------------
+SDS started
+Sum: 372  Cnt: 6
+Send-ID: 46037
+PM10:    6.2  62
+PM2.5:   2.0  19
+------------------
+SDS stopped
+Failed to read from BME, fail counter: 1
+
+Failed to read from BME, fail counter: 2
+
+Failed to read from BME, fail counter: 3
+
+Failed to read from BME, fail counter: 4
+
+Failed to read from BME, fail counter: 5
+
+BME reinit
+Failed to read from BME, fail counter: 6
+
+DHT: Temp: 26.60*C
+Humidity:  48.30%
+DHT ERROR cnt ok:4  NOK: 13
+ SDS             BME            DHT
+46037;6.2;2.0;0.0;0.0;0;26.60;48.30;
+D5B30003E013A6412DE00000
+Packet queued
+30093980: EV_TXCOMPLETE (includes waiting for RX windows)
+
+----------------------------------------------------------
+SDS started
+Sum: 765  Cnt: 6
+Send-ID: 46037
+PM10:    12.8  127
+PM2.5:   2.2  22
+------------------
+SDS stopped
+BME Temp:  0.00
+BME Hum:   0.00
+BME Press: 0.00
+BME ERROR cnt ok:7  NOK: 6
+Failed to read from DHT, fail counter: 14
+Failed to read from DHT, fail counter: 15
+Failed to read from DHT, fail counter: 16
+Failed to read from DHT, fail counter: 17
+Failed to read from DHT, fail counter: 18
+DHT reinit
+DHT: Temp: 26.30*C
+Humidity:  50.30%
+DHT ERROR cnt ok:5  NOK: 18
+DHT reinit
+ SDS             BME            DHT
+46037;12.8;2.2;0.00;0.00;0.00;26.30;50.30;
+D5B30007F016000000000
+Packet queued
+35382373: EV_TXCOMPLETE (includes waiting for RX windows)
+
+----------------------------------------------------------
+SDS started
+Sum: 884  Cnt: 6
+Send-ID: 46037
+PM10:    14.7  147
+PM2.5:   3.0  30
+------------------
+SDS stopped
+BME Temp:  28.31
+BME Hum:   43.44
+BME Press: 973.09
+BME ERROR cnt ok:8  NOK: 6
+Failed to read from DHT, fail counter: 19
+Failed to read from DHT, fail counter: 20
+Failed to read from DHT, fail counter: 21
+DHT: Temp: 26.30*C
+Humidity:  50.40%
+DHT ERROR cnt ok:6  NOK: 21
+ SDS             BME            DHT
+46037;14.7;3.0;28.31;43.44;973.09;26.30;50.40;
+D5B30009301EBF10F73CD000
+Packet queued
+40553580: EV_TXCOMPLETE (includes waiting for RX windows)
+
+----------------------------------------------------------------------------------------------------------
 
 
-
-D5B30000019C004F0A90118003C9000000
 */
