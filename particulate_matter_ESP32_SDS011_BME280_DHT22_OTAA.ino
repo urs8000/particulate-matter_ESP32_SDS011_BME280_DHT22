@@ -132,7 +132,7 @@
 #include <SPI.h>
 
 
- #define my_DEBUG                         // uncomment for debug messages on Serial Monitor  (sporadically disconnect from USB)
+#define my_DEBUG                         // uncomment for debug messages on Serial Monitor  (sporadically disconnect from USB)
 
 // ------------------ usage for ABP --------------------------------------------------
 // #include <Keys_prod_feinstaub_feinstaub_0001_RFM95.h>
@@ -153,8 +153,7 @@
 /*
 // This EUI must be in little-endian format, so least-significant-byte
 // first. When copying an EUI from ttnctl output, this means to reverse
-// the bytes. For TTN issued EUIs the last bytes should be 0xD5, 0xB3,
-// 0x70.
+// the bytes. For TTN issued EUIs the last bytes should be 0xD5, 0xB3, 0x70.
 static const u1_t PROGMEM APPEUI[8]={ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 void os_getArtEui (u1_t* buf) { memcpy_P(buf, APPEUI, 8);}
 // This should also be in little endian format, see above.
@@ -186,7 +185,7 @@ static osjob_t sendjob;
 
 // Schedule TX every this many seconds (might become longer due to duty
 // cycle limitations).
-const unsigned TX_INTERVAL = 60;           // 600 is the minimal delay used between measurements
+const unsigned TX_INTERVAL = 600;          // 600 is the minimal delay used between measurements
 
 // SCK, MISO, MOSI connected to their corresponding pins (9, 10, 11)  (see espressif doculentation)
 /* for ESP32
@@ -207,7 +206,7 @@ const lmic_pinmap lmic_pins = {
 // Sensor declarations
 //---------------------------------------------------------
 #define SDS011    1                        // use SDS011
-#define DHT22     0                        // use DHT22
+#define DHT22     1                        // use DHT22
 #define BME280    1                        // use BME280
 
 
@@ -283,6 +282,8 @@ HardwareSerial Serial1(2);
 #define serialSDS Serial1
 #endif
 
+int LED = 2;                            // GPIO02     blue
+
 String result_SDS = "";
 String result_DHT = "";
 String result_BME = "";
@@ -321,17 +322,35 @@ String Float2String(const float value) {
   return s;
 }
 
+void blink_error(int blinks) {
+    if ( blinks != 0 ) {
+      for ( int z = 0; z == blinks-1; z++ ) {
+       digitalWrite(LED, HIGH);
+       delay(100);                            // wait some time
+       digitalWrite(LED, LOW);    
+       delay(100);                            // wait some time 
+      }
+    } else {
+      for ( int z = 0; z != 10000; z++ ) {
+         digitalWrite(LED, HIGH);
+         delay(100);                            // wait some time
+         digitalWrite(LED, LOW);    
+         delay(100);                            // wait some time 
+      }
+    }
+}
 
 
 //-------------------------------------------------------------------------------------------------
 #if BME280
 void sensorBME()  {
   // Reading Tempersture, Humidity and Pressure
-  bme_temp    = bme.readTemperature();               // Degree Celsius
-  bme_hum     = bme.readHumidity();                  // % rel.Hum
-  bme_press   = bme.readPressure() / 100.0F;         // hPa
+    bme_temp    = bme.readTemperature();                    // Degree Celsius
+    bme_hum     = bme.readHumidity();                       // % rel.Hum
+    bme_press   = bme.readPressure() / 100.0F;              // hPa
 
-  if ( isnan(bme_temp) || isnan(bme_hum) || isnan(bme_press) )  {
+  if ( !bme.begin() )  {
+    blink_error(1);
     cnt_BMEfail++;
     BME_try++;
     BME_failed = true;
@@ -340,17 +359,26 @@ void sensorBME()  {
     DEBUG_PLN();
     delay(500);
   } else {
+    if ( isnan(bme_temp) || isnan(bme_hum) || isnan(bme_press) ) {
+       bme_temp   = 0.0;  bme_hum    = 0.0;  bme_press  = 0.0;
+    }
     result_BME   = String(bme_temp) + ";" + String(bme_hum) + ";" + String(bme_press) + ";";
     cnt_BMEok++;
     BME_failed = false;
     DEBUG_PRT("BME Temp:  ");   DEBUG_PLN(bme_temp);
     DEBUG_PRT("BME Hum:   ");   DEBUG_PLN(bme_hum);
     DEBUG_PRT("BME Press: ");   DEBUG_PLN(bme_press);
-	  DEBUG_PRT("ERROR cnt ok:"); DEBUG_PRT(cnt_BMEok);  DEBUG_PRT("  NOK: "); DEBUG_PLN(cnt_BMEfail);
+	  DEBUG_PRT("BME ERROR cnt ok:"); DEBUG_PRT(cnt_BMEok);  DEBUG_PRT("  NOK: "); DEBUG_PRT(cnt_BMEfail);
   }  
   DEBUG_PLN();
+    if ( (BME_try == 5) || ( cnt_BMEfail == 50) ) {
+      bool status;
+      status = bme.begin();
+      DEBUG_PLN("BME reinit");
+    }  
 }
 #endif
+
 
 //-------------------------------------------------------------------------------------------------
 #if DHT22
@@ -362,12 +390,13 @@ void sensorDHT()  {
 
   // check if returns are valid, if they are NaN (not a number) then something went wrong!
   if ( isnan(DHT_temp) || isnan(DHT_hum) ) {
+    blink_error(1);
     cnt_DHTfail++;
     DHT_try++;
     DHT_failed = true;
     DEBUG_PRT("Failed to read from DHT, fail counter: ");
     DEBUG_PRT(cnt_DHTfail);
-    DEBUG_PLN();
+
     delay(500);
   } else {
     result_DHT   = String(DHT_temp) + ";" + String(DHT_hum) + ";";
@@ -375,14 +404,17 @@ void sensorDHT()  {
     DHT_failed = false;
     DEBUG_PRT("DHT: Temp: "); 
     DEBUG_PRT(DHT_temp);
-    DEBUG_PRT("*C");
-    DEBUG_PRT(" Humidity: "); 
+    DEBUG_PLN("*C");
+    DEBUG_PRT("Humidity:  "); 
     DEBUG_PRT(DHT_hum);
     DEBUG_PLN("%");
-    
-    DEBUG_PRT("ERROR cnt ok:"); DEBUG_PRT(cnt_DHTok);  DEBUG_PRT("  NOK: "); DEBUG_PLN(cnt_DHTfail);
+    DEBUG_PRT("DHT ERROR cnt ok:"); DEBUG_PRT(cnt_DHTok);  DEBUG_PRT("  NOK: "); DEBUG_PRT(cnt_DHTfail);
   }
     DEBUG_PLN();
+    if ( (DHT_try == 5) || ( cnt_DHTfail == 50) ) {
+      dht.begin();
+      DEBUG_PLN("DHT reinit");
+    }
 }
 #endif
 
@@ -475,46 +507,9 @@ void ReadSensors() {
     tosend_s = "";
     DEBUG_PLN("\n----------------------------------------------------------");
     
-    // BME280
-	#if BME280
-     BME_try = 0;
-     while ( (BME_try <= 5) || (BME_failed == true) )
-     {
-       sensorBME();
-       if ( BME_failed == false ) {
-          tosend_s   += result_BME;
-          bme_temp_i  = int(bme_temp * 100);
-          bme_hum_i   = int(bme_hum  * 100);
-		      bme_press_i = int(bme_press);
-          DEBUG_PLN( "BME:  Temp: " + String(bme_temp_i) + "  Humidity: " + String(bme_hum_i) + "  Pressure: " + String(bme_press_i) );
-          break; 
-       } else {
-         result_BME ="0.0;0.0;0;";
-       }
-     }
-    #endif
-	
-    // DHT
-    // it seems, that DHT sometimes failes, so give it 5 tryes to read good data
-    #if DHT22
-     DHT_try = 0;
-     while ( (DHT_try <= 5) || (DHT_failed == true) )
-     {
-       sensorDHT();
-       if ( DHT_failed == false ) {
-          tosend_s += result_DHT;
-          DHT_t_i = int(DHT_temp * 100);
-          DHT_h_i = int(DHT_hum  * 100);
-          break; 
-       } else {
-         result_DHT ="0.0;0.0;";
-       }
-     }
-    #endif
-	
     // SDS
     // Now start SDS senor
-	#if SDS011
+	  #if SDS011
      serialSDS.write(start_SDS_cmd,sizeof(start_SDS_cmd)); 
      is_SDS_running = true;
      SDS_done       = false;
@@ -534,7 +529,49 @@ void ReadSensors() {
      tosend_s += result_SDS;
     #endif
 
-     DEBUG_PLN(" BME            DHT    SDS");
+  // BME280
+    #if BME280
+     BME_try    = 0;
+     BME_failed = false;
+     while ( BME_try <= 5 )
+     {
+       sensorBME();
+       if ( BME_failed == false ) {
+         break;
+       } else {
+         result_BME ="0.0;0.0;0;";
+         bme_temp   = 0.0;  bme_hum    = 0.0;  bme_press  = 0.0;
+       }
+     }
+      tosend_s   += result_BME;
+      bme_temp_i  = int(bme_temp * 100);
+      bme_hum_i   = int(bme_hum  * 100);
+      bme_press_i = int(bme_press);
+      // DEBUG_PLN( "BME:  Temp: " + String(bme_temp_i) + "  Humidity: " + String(bme_hum_i) + "  Pressure: " + String(bme_press_i) );
+    #endif
+  
+    // DHT
+    // it seems, that DHT sometimes failes, so give it 5 tries to read good data
+    #if DHT22
+     DHT_try    = 0;
+     DHT_failed = false;
+     while ( DHT_try <= 5 )                         //|| (DHT_failed == true)
+     {
+       sensorDHT();
+       if ( DHT_failed == false ) {
+          break; 
+       } else {
+         result_DHT ="0.0;0.0;";
+         DHT_temp = 0.0;  DHT_hum = 0.0;
+       }
+     }
+       tosend_s += result_DHT;
+       DHT_t_i = int(DHT_temp * 100);
+       DHT_h_i = int(DHT_hum  * 100);
+
+    #endif
+
+     DEBUG_PLN(" SDS             BME            DHT");
      DEBUG_PLN(tosend_s);
 
   // for debugging:                       423F BACB 5BA0 F280 223D       3F000000 BACB 5BA0 F280 223D 0000003FBACB5BA0F280223D
@@ -544,7 +581,7 @@ void ReadSensors() {
      t_i      =  -3456;                   //  -3456 =          (-34.56)
      h_i      =   8765;                   //   8765 =          ( 87.65)
    */
-   #if SDS011
+   #if SDS011                                    // bytes 00..07 are for SDS011
      mydata[0]  = byte(SDS_ID);
      mydata[1]  = byte(SDS_ID >>  8);
      mydata[2]  = byte(SDS_ID >> 16);
@@ -554,20 +591,36 @@ void ReadSensors() {
      mydata[6]  = highByte(sp2_av_i);
      mydata[7]  =  lowByte(sp2_av_i);
     #endif
-    #if DHT22                               // will be overwritten by values of the BME280 sensor
+    #if ( DHT22 && !BME280 )                     // just to save some cycles
      mydata[8]  = highByte(DHT_t_i);
      mydata[9]  =  lowByte(DHT_t_i);
      mydata[10] = highByte(DHT_h_i);
      mydata[11] =  lowByte(DHT_h_i);
     #endif
-    #if BME280
-     mydata[8]  = highByte(bme_temp_i);
-     mydata[9]  =  lowByte(bme_temp_i);
-     mydata[10] = highByte(bme_hum_i);
-     mydata[11] =  lowByte(bme_hum_i);
-     mydata[12] = highByte(bme_press_i);
-     mydata[13] =  lowByte(bme_press_i);
+    #if BME280                                   // BME280
+      if ( !BME_failed ) {                       // do not fill 
+         mydata[8]  = highByte(bme_temp_i);
+         mydata[9]  =  lowByte(bme_temp_i);
+         mydata[10] = highByte(bme_hum_i);
+         mydata[11] =  lowByte(bme_hum_i);
+         mydata[12] = highByte(bme_press_i);
+         mydata[13] =  lowByte(bme_press_i);
+      }
     #endif	
+    #if ( BME280 && DHT22 )
+      if ( BME_failed ) {
+         mydata[8]  = highByte(DHT_t_i);
+         mydata[9]  =  lowByte(DHT_t_i);
+         mydata[10] = highByte(DHT_h_i);
+         mydata[11] =  lowByte(DHT_h_i);
+      }
+    #endif    
+    #if BME280
+      if ( BME_failed ) {
+         mydata[12] = 0;
+         mydata[13] = 0;
+      }
+    #endif
 	
 /*   mydata[x] = highByte(Vcc_i);
      mydata[x] =  lowByte(Vcc_i);    */
@@ -671,6 +724,8 @@ void do_send(osjob_t* j){
 void setup() {
     Serial.begin(115200);
       delay(100);
+      pinMode(LED, OUTPUT);                              // initialize onboard LED as output
+
     DEBUG_PLN("Starting on USB Serial");
       delay(100);
     serialSDS.begin(9600);                               // 
@@ -684,12 +739,13 @@ void setup() {
 
     #if BME280
        bool status;
-      // default settings
-      status = bme.begin();
-      if (!status) {
-          Serial.println("Could not find a valid BME280 sensor, check wiring!");
-          while (1);
-      }
+       status = bme.begin();
+       if (!status) {
+            DEBUG_PLN("Could not find a valid BME280 sensor, check wiring!");
+            blink_error(0);
+            // watchdog_reset_esp32();
+            while (1);
+       }
     #endif
     
     // now read each sensor once
@@ -800,6 +856,17 @@ D5B30000019C004F0A90118003C9000000
 
 
 ------------------------------------------------------------------------------
+
+load & run
+2 full cycles
+remove DHT22  5xfailed, reinit, failed --> values = 0.0;0.0  (46037;5.9;2.2;28.54;41.61;973.03;0.0;0.0;)
+insert DHT22      --> 46037;6.1;2.2;28.73;40.82;972.99;26.90;53.80;
+remove BME280  ===> HANGS , reset
+--------------
+1 full cycle      --> 46037;8.2;2.1;29.40;39.73;972.94;26.80;47.60;
+remove BME280     --> 46037;7.7;2.4;0.0;0.0;0;26.70;46.20;     temp & hum from DHT22, press 0
+insert BME280     ==> HANGS , reset
+--------------
 ets Jun  8 2016 00:22:57
 
 rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
@@ -815,89 +882,286 @@ load:0x40078000,len:10632
 load:0x40080000,len:252
 entry 0x40080034
 Starting on USB Serial
-Failed to read from BME, fail counter: 1
-
-RXMODE_RSSI
+DHT: Temp: 27.60*C
+Humidity:  57.20%
+DHT ERROR cnt ok:1  NOK: 0
+BME Temp:  28.80
+BME Hum:   41.26
+BME Press: 973.02
+BME ERROR cnt ok:1  NOK: 0
 os_init done
 lmic reset done
 
 ----------------------------------------------------------
-BME Temp:  26.01
-BME Hum:   41.03
-BME Press: 973.93
-ERROR cnt ok:1  NOK: 1
-
-BME:  Temp: 2601  Humidity: 4103  Pressure: 973
 SDS started
-Sum: 486  Cnt: 6
+Sum: 272  Cnt: 6
 Send-ID: 46037
-PM10:    8.1  81
-PM2.5:   1.2  12
+PM10:    4.5  45
+PM2.5:   2.0  20
 ------------------
 SDS stopped
- BME            DHT    SDS
-26.01;41.03;973.93;46037;8.1;1.2;
-D5B3000510CA291073CD000
-1158440: engineUpdate, opmode=0x8
-1158452: Scheduled job 0x3ffc2890, cb 0x400d337c ASAP
+BME Temp:  28.56
+BME Hum:   41.01
+BME Press: 973.05
+BME ERROR cnt ok:2  NOK: 0
+DHT: Temp: 28.30*C
+Humidity:  44.30%
+DHT ERROR cnt ok:2  NOK: 0
+ SDS             BME            DHT
+46037;4.5;2.0;28.56;41.01;973.05;28.30;44.30;
+D5B30002D014B281043CD000
 Packet queued
-1158459: Running job 0x3ffc2890, cb 0x400d337c, deadline 0
-1158649: EV_JOINING
-1158762: engineUpdate, opmode=0xc
-1158953: Uplink join pending
-1159115: Airtime available at 1286025 (previously determined)
-1159457: Uplink delayed until 1286025
-1159669: Scheduled job 0x3ffc2890, cb 0x400d3388 at 1285900
-1285900: Running job 0x3ffc2890, cb 0x400d3388, deadline 1285900
-1285904: engineUpdate, opmode=0xc
-1285907: Uplink join pending
-1285917: Airtime available at 1286025 (previously determined)
-1286258: Ready for uplink
-1286418: Updating info for TX at 1285907, airtime will be 3856. Setting available time for band 0 to 5141907
-1287026: TXMODE, freq=868300000, len=23, SF=7, BW=125, CR=4/5, IH=0
-1290893: irq: dio: 0x0 flags: 0x8
-1290901: Scheduled job 0x3ffc2890, cb 0x400d1ff8 ASAP
-1290905: Running job 0x3ffc2890, cb 0x400d1ff8, deadline 0
-1291015: Scheduled job 0x3ffc2890, cb 0x400d1cf0 at 1603362
-1603362: Running job 0x3ffc2890, cb 0x400d1cf0, deadline 1603362
-1603488: RXMODE_SINGLE, freq=868300000, SF=7, BW=125, CR=4/5, IH=0
-1607933: irq: dio: 0x0 flags: 0x40
-1607950: Scheduled job 0x3ffc2890, cb 0x400d3330 ASAP
-1607954: Running job 0x3ffc2890, cb 0x400d3330, deadline 0
-1608079: Setup channel, idx=3, freq=867100000
-1608315: Setup channel, idx=4, freq=867300000
-1608569: Setup channel, idx=5, freq=867500000
-1608824: Setup channel, idx=6, freq=867700000
-1609079: Setup channel, idx=7, freq=867900000
-1609341: EV_JOINED
-1609442: engineUpdate, opmode=0x808
-1609643: Uplink data pending
-1609806: Considering band 0, which is available at 1608078
-1610132: Considering band 3, which is available at 0
-1610425: No channel found in band 3
-1610625: Considering band 0, which is available at 1608078
-1610951: Airtime available at 1608078 (channel duty limit)
-1611276: Ready for uplink
-1611445: Updating info for TX at 1609643, airtime will be 4496. Setting available time for band 0 to 6105643
-1612043: TXMODE, freq=867100000, len=30, SF=7, BW=125, CR=4/5, IH=0
-1616550: irq: dio: 0x0 flags: 0x8
-1616558: Scheduled job 0x3ffc2890, cb 0x400d1fdc ASAP
-1616562: Running job 0x3ffc2890, cb 0x400d1fdc, deadline 0
-1616671: Scheduled job 0x3ffc2890, cb 0x400d1ce4 at 1679019
-1679019: Running job 0x3ffc2890, cb 0x400d1ce4, deadline 1679019
-1679146: RXMODE_SINGLE, freq=867100000, SF=7, BW=125, CR=4/5, IH=0
-1679485: irq: dio: 0x1 flags: 0x80
-1679493: Scheduled job 0x3ffc2890, cb 0x400d3504 ASAP
-1679546: Running job 0x3ffc2890, cb 0x400d3504, deadline 0
-1679871: Scheduled job 0x3ffc2890, cb 0x400d1d34 at 1741807
-1741807: Running job 0x3ffc2890, cb 0x400d1d34, deadline 1741807
-1741934: RXMODE_SINGLE, freq=869525000, SF=9, BW=125, CR=4/5, IH=0
-1743233: irq: dio: 0x1 flags: 0x80
-1743241: Scheduled job 0x3ffc2890, cb 0x400d3534 ASAP
-1743245: Running job 0x3ffc2890, cb 0x400d3534, deadline 0
-1743360: EV_TXCOMPLETE (includes waiting for RX windows)
-1743674: Scheduled job 0x3ffc1dac, cb 0x400d11c0 at 5493674
-1744005: engineUpdate, opmode=0x900
+1243881: EV_JOINING
+2012454: EV_JOINED
+2143698: EV_TXCOMPLETE (includes waiting for RX windows)
+
+----------------------------------------------------------
+SDS started
+Sum: 576  Cnt: 6
+Send-ID: 46037
+PM10:    9.6  96
+PM2.5:   2.5  25
+------------------
+SDS stopped
+BME Temp:  28.15
+BME Hum:   42.20
+BME Press: 973.02
+BME ERROR cnt ok:3  NOK: 0
+Failed to read from DHT, fail counter: 1
+Failed to read from DHT, fail counter: 2
+Failed to read from DHT, fail counter: 3
+Failed to read from DHT, fail counter: 4
+Failed to read from DHT, fail counter: 5
+DHT reinit
+DHT: Temp: 27.00*C
+Humidity:  46.90%
+DHT ERROR cnt ok:3  NOK: 5
+DHT reinit
+ SDS             BME            DHT
+46037;9.6;2.5;28.15;42.20;973.02;27.00;46.90;
+D5B300060019AFF107C3CD000
+Packet queued
+7432073: EV_TXCOMPLETE (includes waiting for RX windows)
+
+----------------------------------------------------------
+SDS started
+Sum: 357  Cnt: 6
+Send-ID: 46037
+PM10:    5.9  59
+PM2.5:   2.2  22
+------------------
+SDS stopped
+BME Temp:  28.54
+BME Hum:   41.61
+BME Press: 973.03
+BME ERROR cnt ok:4  NOK: 0
+Failed to read from DHT, fail counter: 6
+Failed to read from DHT, fail counter: 7
+Failed to read from DHT, fail counter: 8
+Failed to read from DHT, fail counter: 9
+Failed to read from DHT, fail counter: 10
+DHT reinit
+Failed to read from DHT, fail counter: 11
+ SDS             BME            DHT
+46037;5.9;2.2;28.54;41.61;973.03;0.0;0.0;
+D5B30003B016B2610413CD000
+Packet queued
+12763283: EV_TXCOMPLETE (includes waiting for RX windows)
+
+----------------------------------------------------------
+SDS started
+Sum: 365  Cnt: 6
+Send-ID: 46037
+PM10:    6.1  60
+PM2.5:   2.2  21
+------------------
+SDS stopped
+BME Temp:  28.73
+BME Hum:   40.82
+BME Press: 972.99
+BME ERROR cnt ok:5  NOK: 0
+DHT: Temp: 26.90*C
+Humidity:  53.80%
+DHT ERROR cnt ok:4  NOK: 11
+ SDS             BME            DHT
+46037;6.1;2.2;28.73;40.82;972.99;26.90;53.80;
+D5B30003C015B39FF23CC000
+Packet queued
+17767361: EV_TXCOMPLETE (includes waiting for RX windows)
+
+----------------------------------------------------------
+SDS started
+Sum: 566  Cnt: 6
+Send-ID: 46037
+PM10:    9.4  94
+PM2.5:   2.7  27
+------------------
+SDS stopped
+Failed to read from BME, fail counter: 1
+
+ets Jun  8 2016 00:22:57
+
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+ets Jun  8 2016 00:22:57
+
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0x00
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0008,len:8
+load:0x3fff0010,len:160
+load:0x40078000,len:10632
+load:0x40080000,len:252
+entry 0x40080034
+Starting on USB Serial
+Failed to read from DHT, fail counter: 1
+BME Temp:  30.26
+BME Hum:   38.47
+BME Press: 972.95
+BME ERROR cnt ok:1  NOK: 0
+os_init done
+lmic reset done
+
+----------------------------------------------------------
+SDS started
+Sum: 494  Cnt: 6
+Send-ID: 46037
+PM10:    8.2  82
+PM2.5:   2.1  21
+------------------
+SDS stopped
+BME Temp:  29.40
+BME Hum:   39.73
+BME Press: 972.94
+BME ERROR cnt ok:2  NOK: 0
+DHT: Temp: 26.80*C
+Humidity:  47.60%
+DHT ERROR cnt ok:1  NOK: 1
+ SDS             BME            DHT
+46037;8.2;2.1;29.40;39.73;972.94;26.80;47.60;
+D5B300052015B7CF843CC000
+Packet queued
+1287507: EV_JOINING
+1646388: EV_JOINED
+1777632: EV_TXCOMPLETE (includes waiting for RX windows)
+
+----------------------------------------------------------
+SDS started
+Sum: 460  Cnt: 6
+Send-ID: 46037
+PM10:    7.7  76
+PM2.5:   2.4  23
+------------------
+SDS stopped
+Failed to read from BME, fail counter: 1
+
+Failed to read from BME, fail counter: 2
+
+Failed to read from BME, fail counter: 3
+
+Failed to read from BME, fail counter: 4
+
+Failed to read from BME, fail counter: 5
+
+BME reinit
+Failed to read from BME, fail counter: 6
+
+Failed to read from DHT, fail counter: 2
+Failed to read from DHT, fail counter: 3
+Failed to read from DHT, fail counter: 4
+DHT: Temp: 26.70*C
+Humidity:  46.20%
+DHT ERROR cnt ok:2  NOK: 4
+ SDS             BME            DHT
+46037;7.7;2.4;0.0;0.0;0;26.70;46.20;
+D5B30004C017A6E12C00000
+Packet queued
+6073592: EV_TXCOMPLETE (includes waiting for RX windows)
+
+----------------------------------------------------------
+SDS started
+Sum: 303  Cnt: 6
+Send-ID: 46037
+PM10:    5.1  50
+PM2.5:   2.5  25
+------------------
+SDS stopped
+ets Jun  8 2016 00:22:57
+
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+ets Jun  8 2016 00:22:57
+
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0x00
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0008,len:8
+load:0x3fff0010,len:160
+load:0x40078000,len:10632
+load:0x40080000,len:252
+entry 0x40080034
+Starting on USB Serial
+DHT: Temp: 26.70*C
+Humidity:  46.10%
+DHT ERROR cnt ok:1  NOK: 0
+BME Temp:  27.66
+BME Hum:   41.02
+BME Press: 972.99
+BME ERROR cnt ok:1  NOK: 0
+os_init done
+lmic reset done
+
+----------------------------------------------------------
+SDS started
+Sum: 364  Cnt: 6
+Send-ID: 46037
+PM10:    6.1  60
+PM2.5:   3.1  31
+------------------
+SDS stopped
+BME Temp:  27.72
+BME Hum:   38.25
+BME Press: 972.93
+BME ERROR cnt ok:2  NOK: 0
+Failed to read from DHT, fail counter: 1
+Failed to read from DHT, fail counter: 2
+Failed to read from DHT, fail counter: 3
+Failed to read from DHT, fail counter: 4
+Failed to read from DHT, fail counter: 5
+DHT reinit
+Failed to read from DHT, fail counter: 6
+ SDS             BME            DHT
+46037;6.1;3.1;27.72;38.25;972.93;0.0;0.0;
+D5B30003C01FAD4EF13CC000
+Packet queued
+1571694: EV_JOINING
+2308069: EV_JOINED
+2439313: EV_TXCOMPLETE (includes waiting for RX windows)
+
+----------------------------------------------------------
+SDS started
+Sum: 837  Cnt: 6
+Send-ID: 46037
+PM10:    13.9  139
+PM2.5:   3.3  32
+------------------
+SDS stopped
+BME Temp:  28.40
+BME Hum:   37.48
+BME Press: 972.97
+BME ERROR cnt ok:3  NOK: 0
+Failed to read from DHT, fail counter: 7
+Failed to read from DHT, fail counter: 8
+Failed to read from DHT, fail counter: 9
+DHT: Temp: 26.30*C
+Humidity:  42.20%
+DHT ERROR cnt ok:2  NOK: 9
+ SDS             BME            DHT
+46037;13.9;3.3;28.40;37.48;972.97;26.30;42.20;
+D5B30008B020B18EA43CC000
+Packet queued
+7610511: EV_TXCOMPLETE (includes waiting for RX windows)
+
 
 
 */
