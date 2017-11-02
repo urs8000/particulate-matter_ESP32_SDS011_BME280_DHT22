@@ -83,6 +83,8 @@
  *  D19   ->    MISO
  *  D23   ->    MOSI
  *  D13   ->    RST
+ *  D12   ->    DIO0
+ *  D14   ->    DIO1
      
  *        ---->  BMP280   (+3V3, GND)
  *  D21   ->    SDA
