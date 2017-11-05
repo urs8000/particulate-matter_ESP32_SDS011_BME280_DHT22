@@ -35,6 +35,7 @@ waiting:   70mA  (no sleep mode implemented)
 * look [here](https://github.com/verschwoerhaus/ttn-ulm-workshop-the-things-uno#the-things-uno-workshop--ulm-digital) for a great description how to configure the console, add application and devices
 
 
+### decoder in console
 function Decoder(bytes, port) {
   var SDS_ID      = (bytes[3] << 24) | (bytes[2] << 16) | (bytes[1] << 8) | bytes[0];
 
@@ -45,6 +46,7 @@ function Decoder(bytes, port) {
   var temp_x      = (bytes[8] <<8)   | bytes[9];
 
   var hum_x       = (bytes[10] <<8)  | bytes[11];
+
   var press_bme   = (bytes[12] <<8)  | bytes[13];
 
   //  var batteryV    = (bytes[x] <<8) | bytes[x];
