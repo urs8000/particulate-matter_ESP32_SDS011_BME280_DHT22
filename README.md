@@ -21,6 +21,7 @@ waiting:   70mA  (no sleep mode implemented)
 * both authentication methods are available (only for DOIT).
   you have to configure the device via the console in the desired method
  > Over-the-Air Activation (OTAA)
+ 
  > Activation by Personalization (ABP)
 
 ### remarks
@@ -32,25 +33,24 @@ waiting:   70mA  (no sleep mode implemented)
 * verify the I2C address of the BME280 and edit it in Adafruit-BME280.h  (0x77 -> 0x76)
 
 * look [here](https://github.com/verschwoerhaus/ttn-ulm-workshop-the-things-uno#the-things-uno-workshop--ulm-digital) for a great description how to configure the console, add application and devices
-  
+
 
 function Decoder(bytes, port) {
   var SDS_ID      = (bytes[3] << 24) | (bytes[2] << 16) | (bytes[1] << 8) | bytes[0];
-  
+
   var SDS_PM10    = (bytes[4] << 8)  | bytes[5];
-  
+
   var SDS_PM25    = (bytes[6] << 8)  | bytes[7];  
-  
+
   var temp_x      = (bytes[8] <<8)   | bytes[9];
-  
+
   var hum_x       = (bytes[10] <<8)  | bytes[11];
-  
   var press_bme   = (bytes[12] <<8)  | bytes[13];
 
   //  var batteryV    = (bytes[x] <<8) | bytes[x];
-  
 
   return {
+
 
   SDS_ID:       SDS_ID,
 
@@ -65,7 +65,7 @@ function Decoder(bytes, port) {
   Pressure:     press_bme
 
   //  batteryV:  batteryV / 1000         not i,plemented jet
-  
+
   }
-  
+
 }
