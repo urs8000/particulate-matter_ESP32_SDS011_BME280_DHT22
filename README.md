@@ -3,7 +3,7 @@
 http://codefor.de/stuttgart/  build: http://luftdaten.info/feinstaubsensor-bauen/
 
 ### used hardware
-* microcontroller:	ESP32 (DOIT)
+* microcontroller:	ESP32   DOIT or WEMOS LoLin-V1.0.0
 * Feinstaubsensor:	SDS011		http://inovafitness.com/en/Laser-PM2-5-Sensor-SDS011-35.html
 * Temp/Hum:			DHT22 (no resistor between Vcc & Data when powered by 3.3V!)
 * Temp/Hum/Press:	BME280
@@ -29,6 +29,7 @@ waiting:   70mA  (no sleep mode implemented)
 * you need to install ESP32 in the Arduino IDE (link in code)
 * Keys for ABP were separeted, structure explained
 * the values from DHT22 will be overwritten if both sensors are selected (see remarks in the code)
+* verify the I2C address of the BME280 and edit it in Adafruit-BME280.h  (0x77 -> 0x76)
 
 function Decoder(bytes, port) {
   var SDS_ID      = (bytes[3] << 24) | (bytes[2] << 16) | (bytes[1] << 8) | bytes[0];
